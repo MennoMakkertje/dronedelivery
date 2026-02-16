@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <title>Nieuwe landlocatie scannen</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f9; padding:20px; }
+    h1 { text-align:center; }
+    .container { max-width:600px; margin:auto; background:#fff; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.1); }
+    video, canvas { width:100%; border:1px solid #ccc; border-radius:5px; margin-top:10px; }
+    button, input[type="file"] { width:100%; padding:10px; margin-top:10px; border:none; border-radius:4px; background:#007bff; color:white; font-size:16px; cursor:pointer; }
+    button:hover { background:#0056b3; }
+    input[type="file"] { background:#eee; color:#000; cursor:auto; }
+    .result { margin-top:20px; padding:15px; border-radius:5px; display:none; }
+    .success { background:#e9ffe9; border:1px solid #b2ffb2; }
+    .error { background:#ffe9e9; border:1px solid #ffb2b2; }
+  </style>
+</head>
+<body>
+  <h1>Nieuwe landlocatie scannen</h1>
+  <div class="container">
+    <video id="camera" autoplay></video>
+    <canvas id="snapshot" style="display:none;"></canvas>
+    <button id="captureBtn">Maak foto</button>
+    
+    <!-- Nieuw: upload knop -->
+    <input type="file" id="uploadInput" accept="image/*">
+
+    <button id="analyzeBtn">Analyseer locatie</button>
+
+    <div id="resultBox" class="result"></div>
+
+    <div id="addLocationForm" style="display:none;">
+      <label for="locName">Naam van locatie:</label>
+      <form id="locatieForm">
+        <input type="text" id="locatieFormName" name="locName" placeholder="Bijv. Tuin achter huis">
+      </form>
+      <button type="button" id="addBtn">Toevoegen</button>
+    </div>
+  </div>
+
+  <script>
+
+    let ipAdress = "http://127.0.01:8000"
+
+    const video = document.getElementById('camera');
+    const canvas = document.getElementById('snapshot');
+    const captureBtn = document.getElementById('captureBtn');
+    const uploadInput = document.getElementById('uploadInput');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const resultBox = document.getElementById('resultBox');
+    const addForm = document.getElementById('addLocationForm');
+    const addBtn = document.getElementById('addBtn');
+    const locatieForm = document.getElementById('locatieForm');
+
+    let fotoBlob = null;
+
+    // Camera openen
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => { video.srcObject = stream; })
+      .catch(err => alert("Camera niet beschikbaar: " + err));
+
+    // Foto maken
+    captureBtn.addEventListener('click', () => {
+      const ctx = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      canvas.style.display = 'block';
+      canvas.toBlob(blob => { fotoBlob = blob; }, 'image/jpeg');
+    });
+
+    // Foto uploaden en tonen in canvas
+    uploadInput.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (file) {
+        fotoBlob = file;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() {
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            canvas.style.display = 'block';
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+
+        // Camera uitschakelen om verwarring te voorkomen
+        if (video.srcObject) {
+          const tracks = video.srcObject.getTracks();
+          tracks.forEach(track => track.stop());
+          video.srcObject = null;
+        }
+      }
+    });
+
+    // Analyse via API
+    analyzeBtn.addEventListener('click', () => {
+      if (!fotoBlob) { alert("Maak of upload eerst een foto!"); return; }
+
+      const formData = new FormData();
+      formData.append("file", fotoBlob, "locatie.jpg");
+
+      fetch(ipAdress + "/api/analyze", {
+        method: "POST",
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        resultBox.style.display = 'block';
+        if (data.safe) {
+          resultBox.className = 'result success';
+          resultBox.innerHTML = "<h3>Locatie goedgekeurd ✅</h3><p>" + data.message + "</p>";
+          addForm.style.display = 'block';
+        } else {
+          resultBox.className = 'result error';
+          resultBox.innerHTML = "<h3>Locatie afgekeurd ❌</h3><p>" + data.message + "</p>";
+          addForm.style.display = 'none';
+        }
+      })
+      .catch(err => alert("Fout bij analyse: " + err));
+    });
+
+    async function getLatLon() {
+      return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject("Geolocatie wordt niet ondersteund.")
+        return;
+      }
+
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            resolve({ lat, lon });
+          },
+          (error) => {
+            reject("Kon locatie niet ophalen: " + error.message);
+          }
+        );
+        });
+      }
+    // Toevoegen en terug naar originele pagina
+    addBtn.addEventListener('click', async () => {
+
+      const { lat, lon } = await getLatLon();
+
+      console.log(locatieForm);
+      const formData = new FormData(locatieForm);
+
+      formData.append("lat", lat);
+      formData.append("lon", lon);
+
+      const locName = formData.get("locName")
+      console.log(locName);
+      console.log(formData);
+      try {
+        const responseLOC = await fetch(ipAdress + "/api/location", {
+          method: "POST",
+          body: formData
+        });
+
+        const reslutLOC = await responseLOC.json();
+        console.log("opgeslagen", reslutLOC.saved);
+
+        window.location.href = "index.html?from=scan";
+      } catch (error) {
+        console.error("Opslaan mislukt:", error);
+        alert("Er ging iets mis bij het opslaan.");
+    }
+    });
+  </script>
+</body>
+</html>

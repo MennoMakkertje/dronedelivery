@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="nl">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Bestelling afronden</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f9;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    button {
+      background-color: #007bff;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .order-summary {
+      background: #f9f9f9;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      background: #e9ffe9;
+      border: 1px solid #b2ffb2;
+      border-radius: 5px;
+      display: none;
+    }
+
+    .drone-options {
+      margin-top: 15px;
+      padding: 15px;
+      background: #eef7ff;
+      border: 1px solid #bcdcff;
+      border-radius: 5px;
+      display: none;
+    }
+    /* Kaartcontainer voor OpenFreeMap */ 
+    #map { 
+      height: 300px; 
+      margin-top: 15px; 
+      display: none; 
+    }
+    
+  </style>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+
+</head>
+
+<body>
+  <h1>Bestelling afronden</h1>
+  <div class="container">
+    <!-- Besteloverzicht -->
+    <div class="order-summary">
+      <h3>Jouw bestelling</h3>
+      <p>Product: <strong>Smartphone X200</strong></p>
+      <p>Prijs: <strong>€499</strong></p>
+      <p>Aantal: <strong>1</strong></p>
+      <p>Totaal: <strong>€499</strong></p>
+    </div>
+
+    <!-- Gegevens invullen -->
+    <form id="checkoutForm">
+      <label for="naam">Naam:</label>
+      <input type="text" id="naam" name="naam" required>
+
+      <label for="plaats">Plaats:</label>
+      <input type="text" id="plaats" name="plaats" required>
+
+      <label for="straat">Straat:</label>
+      <input type="text" id="straat" name="straat" required>
+
+      <label for="huisnummer">Huisnummer:</label>
+      <input type="text" id="huisnummer" name="huisnummer" required>
+
+      <label for="email">E-mail:</label>
+      <input type="email" id="email" name="email" required>
+
+      <label for="delivery">Bezorgoptie:</label>
+      <select id="delivery" name="delivery" required>
+        <option value="normaal">DHL bezorging</option>
+        <option value="drone">Drone bezorging</option>
+      </select>
+
+      <!-- Drone opties -->
+      <div class="drone-options" id="droneOptions">
+        <h4>Drone landlocatie kiezen</h4>
+        <label for="locations">Beschikbare locaties:</label>
+        <select id="locations" name="locations">
+        </select>
+
+        <div id="map"></div>
+
+        <button id="BtnNLS" type="button">
+          Nieuwe locatie scannen</button>
+
+        <button type="button">Bevestigen</button>
+      </div>
+
+      <button type="submit">Betalen</button>
+    </form>
+
+    <div class="result" id="resultBox"></div>
+  </div>
+
+  <script>
+    let ipAdress = "http://127.0.01:8000"
+
+    const form = document.getElementById('checkoutForm');
+    const resultBox = document.getElementById('resultBox');
+    const deliverySelect = document.getElementById('delivery');
+    const droneOptions = document.getElementById('droneOptions');
+    let getLocations = { saved: [] };
+    let map;
+    let marker;
+
+
+      const params = new URLSearchParams(window.location.search);
+    if (params.get("from") === "scan") {
+      loadSavedData();
+      loadSavedLocation();
+    }
+    else if (params.get("from") != "scan") {
+      loadSavedLocation();
+    }
+
+    async function loadSavedData() {
+      const response = await fetch( ipAdress + "/api/data");
+      const data = await response.json();
+
+      console.log(data); // toont { status: "ok", saved: {...} }
+
+      if (data && data.saved) {
+        document.getElementById("naam").value = data.saved.naam || "";
+        document.getElementById("plaats").value = data.saved.plaats || "";
+        document.getElementById("straat").value = data.saved.straat || "";
+        document.getElementById("huisnummer").value = data.saved.huisnummer || "";
+        document.getElementById("email").value = data.saved.email || "";
+      }
+    }
+
+    async function loadSavedLocation() {
+      const responseLocations = await fetch(ipAdress + "/api/location");
+      getLocations = await responseLocations.json();
+
+      console.log(getLocations);
+
+      // 1. Eerst de placeholder toevoegen
+
+      const select = document.getElementById("locations");
+      for (let index = 0; index < getLocations.saved.length; index++) {
+        const option = document.createElement("option");
+        option.value = getLocations.saved[index].tag;
+        option.textContent = getLocations.saved[index].name;
+        select.appendChild(option);
+      }
+    }
+
+
+    document.getElementById("BtnNLS").addEventListener("click", async () => {
+      const form = document.getElementById("checkoutForm");
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch(ipAdress + "/api/data", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await response.json();
+        console.log("Opgeslagen:", result.saved);
+
+        // Pas doorgaan als opslaan gelukt is
+        window.location.href = "scan.html";
+
+      } catch (error) {
+        console.error("Opslaan mislukt:", error);
+        alert("Er ging iets mis bij het opslaan.");
+      }
+    });
+
+// Toon kaart zodra drone-opties zichtbaar worden
+deliverySelect.addEventListener('change', function () {
+  if (deliverySelect.value === 'drone') {
+    droneOptions.style.display = 'block';
+    document.getElementById("map").style.display = "block";
+
+if (!map) {
+  map = L.map('map').setView([52.7, 5.75], 13);
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+  }).addTo(map);
+}
+  } else {
+    droneOptions.style.display = 'none';
+    document.getElementById("map").style.display = "none";
+  }
+});
+
+// Locatie kiezen → kaart updaten
+document.getElementById("locations").addEventListener("change", function () {
+  const selectedTag = this.value;
+
+  const loc = getLocations.saved.find(l => l.tag === selectedTag);
+  if (!loc) return;
+
+  const lat = loc.lat;
+  const lon = loc.lon;
+
+  map.setView([lat, lon], 18);
+
+if (marker) {
+  marker.remove();
+}
+
+marker = L.marker([lat, lon]).addTo(map)
+  .bindPopup(loc.name)
+  .openPopup();
+
+});
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const name = document.getElementById('naam').value;
+      const plaats = document.getElementById('plaats').value;
+      const email = document.getElementById('email').value;
+      const delivery = document.getElementById('delivery').value;
+
+      resultBox.style.display = 'block';
+      resultBox.innerHTML = `
+        <h3>Betaling geslaagd ✅</h3>
+        <p>Bedankt <strong>${name}</strong> voor je bestelling!</p>
+        <p>Product: <strong>Smartphone X200</strong></p>
+        <p>Prijs: <strong>€499</strong></p>
+        <p>Bezorgoptie: <strong>${delivery === 'normaal' ? 'Normale bezorging' : 'Drone bezorging'}</strong></p>
+        <p>Je bestelling wordt verzonden naar: <strong>${plaats}</strong></p>
+        <p>Bevestiging is verstuurd naar: <strong>${email}</strong></p>
+      `;
+    });
+
+
+  </script>
+</body>
+
+</html>
