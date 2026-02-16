@@ -284,10 +284,17 @@ marker = L.marker([lat, lon]).addTo(map)
         <p>Bevestiging is verstuurd naar: <strong>${email}</strong></p>
       `;
     });
+    async function resetData() {
+     fetch("https://dronedelivery-orgineel.onrender.com/api/reset", {
+  method: "POST"
+})
+  .then(r => r.json())
+  .then(console.log);
 
-
+    }
   </script>
 </body>
 
 
 </html>
+
