@@ -40,18 +40,10 @@ async def reset_data():
     TEMP_DATA = {}
 
     LOCATIONS = [
-        {
-            "name": "Kies een locatie"
-        },
-        {
-           "name": "School", 
-           "tag": "school",
-           "lat": 52.715817891338546, 
-           "lon": 5.749000545222782
-        }
+        {"name": "Kies een locatie"}
     ]
-    
-        return {"status": "reset", "message": "Alle gegevens zijn gewist."}
+
+    return {"status": "reset", "message": "Alle gegevens zijn gewist."}
 
 # ---------------------------
 # 1. /api/data  (velden opslaan)
@@ -185,4 +177,5 @@ async def analyze_location(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
 
